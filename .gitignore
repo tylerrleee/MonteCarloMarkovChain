@@ -1,0 +1,11 @@
+# Python cache files
+__pycache__/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# All data folders (case-sensitive)
+data/
+Data/
+
+BedMachineAntarctica-v3.nc

@@ -1,0 +1,29 @@
+name: gstatsmcmc
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - ipython
+  - jupyterlab
+  - notebook
+  - ipywidgets
+  - numpy
+  - pandas
+  - geopandas
+  - shapely
+  - xarray
+  - scipy
+  - matplotlib
+  - scikit-learn
+  - scikit-gstat
+  - gstools
+  - verde
+  - pyproj
+  - cartopy
+  - pillow
+  - pip
+  - pip: 
+    - gstatsim==1.1.2
+    - matplotlib-scalebar
+    
