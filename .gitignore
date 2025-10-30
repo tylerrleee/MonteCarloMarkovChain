@@ -3,6 +3,9 @@ __pycache__/
 
 # Jupyter notebook checkpoints
 .ipynb_checkpoints/
+*.csv
+*.nc
+
 
 # All data folders (case-sensitive)
 data/
