@@ -1,5 +1,5 @@
 # requirements.txt equivalent of gstatsmcmc environment
-python==3.10
+ipython
 ipython
 jupyterlab
 notebook

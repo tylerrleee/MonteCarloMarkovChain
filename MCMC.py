@@ -17,7 +17,7 @@ import gstools as gstools
 import skgstat as skg
 from skgstat import models
 
-from .geostatisticalMCMC.gstatsMCMC import Topography
+import Topography
 
 def fit_variogram(data, coords, roughness_region_mask, maxlag, n_lags=50, samples=0.6, subsample=100000, data_for_trans = []):
     """
