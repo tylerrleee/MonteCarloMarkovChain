@@ -19,4 +19,5 @@ pyproj
 cartopy
 pillow
 gstatsim==1.1.2
+sys
 matplotlib-scalebar

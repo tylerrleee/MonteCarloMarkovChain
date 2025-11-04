@@ -40,7 +40,7 @@ source venv/bin/activate
 
 5. Installing dependencies
 
-pip install --upgrade pip && -r requirements.txt
+pip install --upgrade pip && pip install -r requirements.txt
 
 ## Library structure
 

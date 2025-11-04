@@ -18,3 +18,7 @@ Data/
 .ipynb_checkpoints/
 BedMachineAntarctica-v3.nc
 
+# 2_Statistical_Analysis
+
+2_Statistical_Analysis/*.npy
+2_Statistical_Analysis/*.txt
