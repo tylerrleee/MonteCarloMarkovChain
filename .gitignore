@@ -22,3 +22,7 @@ BedMachineAntarctica-v3.nc
 
 2_Statistical_Analysis/*.npy
 2_Statistical_Analysis/*.txt
+
+## MCMC chains
+MCMC_chains/*.txt
+MCMC_chains/*.npy

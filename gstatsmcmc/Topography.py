@@ -234,6 +234,7 @@ Returns:
     bm_errbed (2D numpy array of floats): the interpolated BedMachine bed error.
     fig: visualization of the interpolated data
 """
+
 def load_bedmachine(dataset_path,xx,yy,res,interp_method='linear',k=1):
     dsbm = xr.open_dataset(dataset_path)
     dsbm = dsbm.sel(x=(dsbm.x > xx.min() - res*20) & (dsbm.x < xx.max() + res*20), y=(dsbm.y > yy.min() - res*20) & (dsbm.y < yy.max() + res*20))
@@ -296,6 +297,7 @@ Returns:
     bm_errbed (2D numpy array of floats): the interpolated BedMachine bed error.
     fig: visualization of the interpolated data
 """
+
 def load_bedmap(dataset_path,xx,yy,res,interp_method='linear',k=1):
     dsbm = xr.open_dataset(dataset_path)
     dsbm = dsbm.sel(x=(dsbm.x > xx.min() - res*20) & (dsbm.x < xx.max() + res*20), y=(dsbm.y > yy.min() - res*20) & (dsbm.y < yy.max() + res*20))
@@ -360,6 +362,7 @@ Returns:
     df_out (pandas dataframe): the dataframe that are excluded from the df
     fig: figure as a overview of the dataset
 """
+# TODO: geoid correction, make include_only_thickness_data useful
 def load_radar(folder_path, output_csv, include_only_thickness_data = False):
 
     if not os.path.isdir(folder_path):
@@ -450,6 +453,7 @@ def load_radar(folder_path, output_csv, include_only_thickness_data = False):
     
     return df, df_out, fig
 
+# TODO: method title
 # the method is adopted from GStatSim python package
 """grid compiled radar data into square grid with given resolution. 
 Notice that this function is a slight modification to the grid_data function in gstatsim python package.
@@ -509,7 +513,6 @@ def grid_data(df, x_name, y_name, z_name, res, xmin, xmax, ymin, ymax):
     
     return df_grid, grid_matrix, rows, cols
 
-
 """
 Args:
     geoid_dataset_path (str): The file location of the geoid file
@@ -538,7 +541,8 @@ def convert_geoid(geoid_file_path, xx, yy, res):
     geoid = interp.predict((xx.flatten(),yy.flatten()))
 
     return geoid   
-
+    
+    
 """ find the high velocity region as a mask and a boundary map. 
 The idea is to first find the high-velocity, grounded ice region; then smooth the boundary of the mask; then expand the boundary outward
 
@@ -591,7 +595,7 @@ Args:
     vely (2D numpy array of float): velocity in the y-direction, in unit of meters per year
     dhdt (2D numpy array of float): rate of changes of surface elevation, in unit of meters per year
     smb (2D numpy array of float): annual surface mass balance, in unit of ice-equivalent meters per year
-    
+    resolution (int): resolution of the grid.
 Returns:
     res: mass conservation residual given the input parameters
     
@@ -601,20 +605,13 @@ Note: need to consider uncertainties due to
 3. numerical error due to the np.gradient function
 4. error in all these day and correlation in the error
 """
-def get_mass_conservation_residual(bed, surf, velx, vely, dhdt, smb):
+def get_mass_conservation_residual(bed, surf, velx, vely, dhdt, smb, resolution):
     thick = surf - bed
-    #uHx = velx*thick
-    #uHy = vely*thick
     
-    dx = np.gradient(velx*thick, 1000, axis=1)
-    dy = np.gradient(vely*thick, 1000, axis=0)
+    dx = np.gradient(velx*thick, resolution, axis=1)
+    dy = np.gradient(vely*thick, resolution, axis=0)
     
     res = dx + dy + dhdt - smb
-    
-    #Note that gradient and diff give back different results, need to know the mathematics of np.gradient
-
-    #dx = np.diff(uHx, axis=1, prepend=np.mean(uHx)) / 1000
-    #dy = np.diff(uHy, axis=0, prepend=np.mean(uHy)) / 1000
     
     return res
 
