@@ -16,9 +16,8 @@ import gstatsim as gs
 import gstools as gstools
 import skgstat as skg
 from skgstat import models
-import sys
-sys.path.append('..')
-from gstatsmcmc import Topography
+
+from . import Topography
 
 def fit_variogram(data, coords, roughness_region_mask, maxlag, n_lags=50, samples=0.6, subsample=100000, data_for_trans = []):
     """
@@ -59,9 +58,9 @@ def fit_variogram(data, coords, roughness_region_mask, maxlag, n_lags=50, sample
                 experimental variogram against the fitted theoretical models.
     """
     if len(data_for_trans)==0:
-        nst_trans = QuantileTransformer(n_quantiles=500, output_distribution="normal",random_state=0,subsample=subsample).fit(data)
+        nst_trans = QuantileTransformer(n_quantiles=500, output_distribution="normal",random_state=152,subsample=subsample).fit(data)
     else:
-        nst_trans = QuantileTransformer(n_quantiles=500, output_distribution="normal",random_state=0,subsample=subsample).fit(data_for_trans)
+        nst_trans = QuantileTransformer(n_quantiles=500, output_distribution="normal",random_state=152,subsample=subsample).fit(data_for_trans)
         
     transformed_data = nst_trans.transform(data)
     
@@ -806,7 +805,7 @@ class chain_crf(chain):
         loss_data_cache = np.zeros(n_iter)
         loss_cache = np.zeros(n_iter)
         step_cache = np.zeros(n_iter)
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             bed_cache = np.zeros((n_iter, self.xx.shape[0], self.xx.shape[1]))
         blocks_cache = np.full((n_iter, 4), np.nan)
         resampled_times = np.zeros(self.xx.shape)
@@ -824,7 +823,7 @@ class chain_crf(chain):
         loss_data_cache[0] = loss_prev_data
         loss_mc_cache[0] = loss_prev_mc
         step_cache[0] = False
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             bed_cache[0] = bed_c
         
         #crf_weight = self.crf_data_weight
@@ -918,13 +917,13 @@ class chain_crf(chain):
                 loss_data_cache[i] = loss_prev_data
                 step_cache[i] = False
             
-            if ~only_save_last_bed:
+            if not only_save_last_bed:
                 bed_cache[i,:,:] = bed_c
 
             if i%info_per_iter == 0:
                 print(f'i: {i} mc loss: {loss_mc_cache[i]:.3e} data loss: {loss_data_cache[i]:.3e} loss: {loss_cache[i]:.3e} acceptance rate: {np.sum(step_cache)/(i+1)}')
                 
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
         else:
             return bed_c, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
@@ -934,6 +933,7 @@ class chain_sgs(chain):
     Inherit the chain class. Used for creating sequential gaussian simulation blocks-based MCMC chains.
     
     Parameters in addition to chain's parameters:
+        do_transform (bool): If true, normalize radar measurements with normal score transformation to generate subglacial topography. If false, directly use Sequential Gaussian Simulation on un-normalized subglacial topography.
         nst_trans (scikit-learn.preprocessing.QuantileTransformer): The normal score transformation for the (detrended/not detrended) subglacial topography.
         trend: (numpy.ndarray): A 2D array representing the trend of the subglacial topography
         detrend_map (bool): If 'True', the subglacial topography will be de-trended using parameter 'trend'. If 'False', the topography will not be de-trended.
@@ -948,7 +948,7 @@ class chain_sgs(chain):
         print('please also set up the sgs parameters using set_sgs_param(self, block_size, sgs_param)')
         print('then please set up the loss function using either set_loss_type or set_loss_func')
         
-    def set_normal_transformation(self, nst_trans):
+    def set_normal_transformation(self, nst_trans, do_transform = True):
         """
         Set the normal score transformation object (from scikit-learn package) used to normalize the bed elevation.
         The function has no returns. Its effect can be checked in the object's parameter 'nst_trans'
@@ -959,7 +959,11 @@ class chain_sgs(chain):
         Note:
             This transformation must be fit beforehand (e.g., via `MCMC.fit_variogram`).
         """
-        self.nst_trans = nst_trans
+        self.do_transform = do_transform
+        if do_transform:
+            self.nst_trans = nst_trans
+        else:
+            self.nst_trans = None
       
     def set_trend(self, trend = None, detrend_map = True):
         """
@@ -1099,7 +1103,7 @@ class chain_sgs(chain):
         loss_mc_cache = np.zeros(n_iter)
         loss_data_cache = np.zeros(n_iter)
         step_cache = np.zeros(n_iter)
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             bed_cache = np.zeros((n_iter, rows, cols))
         blocks_cache = np.full((n_iter, 4), np.nan)
         
@@ -1110,12 +1114,15 @@ class chain_sgs(chain):
             bed_c = self.initial_bed
             cond_bed_c = self.cond_bed
 
-        nst_trans = self.nst_trans
         
-        z = nst_trans.transform(bed_c.reshape(-1,1))
+        if self.do_transform:
+            nst_trans = self.nst_trans
+            z = nst_trans.transform(bed_c.reshape(-1,1))
+            z_cond_bed = nst_trans.transform(cond_bed_c.reshape(-1,1))
+        else:
+            z = bed_c.reshape(-1,1)
+            z_cond_bed = cond_bed_c.reshape(-1,1)
             
-        # Need an additional parameter to store normalized actual conditioning data
-        z_cond_bed = nst_trans.transform(cond_bed_c.reshape(-1,1))
         cond_bed_data = np.array([self.xx.flatten(),self.yy.flatten(),z_cond_bed.flatten()])
         cond_bed_df = pd.DataFrame(cond_bed_data.T, columns=['x','y','cond_bed'])
         
@@ -1144,7 +1151,7 @@ class chain_sgs(chain):
         loss_mc_cache[0] = loss_prev_mc
         loss_data_cache[0] = loss_prev_data
         step_cache[0] = False
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             bed_cache[0] = bed_c
         
         for i in range(n_iter):
@@ -1210,7 +1217,10 @@ class chain_sgs(chain):
 
             psimdf_next = psimdf.copy()
             psimdf_next.loc[resampling_box_index,['x','y','z']] = xy_grid
-            bed_next = nst_trans.inverse_transform(np.array(psimdf_next['z']).reshape(-1,1)).reshape(rows,cols)
+            if self.do_transform:
+                bed_next = nst_trans.inverse_transform(np.array(psimdf_next['z']).reshape(-1,1)).reshape(rows,cols)
+            else:
+                bed_next = np.array(psimdf_next['z']).reshape(rows,cols)
             
             if self.detrend_map == True:
                 mc_res = Topography.get_mass_conservation_residual(bed_next + self.trend, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
@@ -1256,7 +1266,7 @@ class chain_sgs(chain):
                 loss_data_cache[i] = loss_prev_data
                 step_cache[i] = False
 
-            if ~only_save_last_bed:
+            if not only_save_last_bed:
                 if self.detrend_map == True:
                     bed_cache[i,:,:] = bed_c + self.trend
                 else:
@@ -1272,7 +1282,7 @@ class chain_sgs(chain):
         else:
             last_bed = bed_c
 
-        if ~only_save_last_bed:
+        if not only_save_last_bed:
             return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
         else:
             return last_bed, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache

@@ -27,3 +27,7 @@ BedMachineAntarctica-v3.nc
 ## MCMC chains
 MCMC_chains/*.txt
 MCMC_chains/*.npy
+
+
+## MISC
+PRACTICE_MCMC.ipynb
