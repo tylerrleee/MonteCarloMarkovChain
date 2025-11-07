@@ -1286,3 +1286,240 @@ class chain_sgs(chain):
             return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
         else:
             return last_bed, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
+
+    def run_tylerle(self, n_iter, rng_seed=None, only_save_last_bed=False, info_per_iter=1000):
+        """
+        Issues to solve: Memory issues as we store more float64 simulations -- storing 100k instances, of zeros or simulated. 
+
+        Run the MCMC chain using block-based SGS updates
+        
+        Args:
+            n_iter (int): Number of iterations in the MCMC chain.
+            rng_seed (None or string): The seed for the NumPy random number generator. If None, a random seed is used.
+            only_save_last_bed: If true, the function will only return one subglacial topography at the end of iterations. If false, the function will return all subglacial topography in every iteration.
+            info_per_iter (int): for every this number of iterations, the information regarding current loss values and acceptance rate will be printed out.
+        
+        Returns:
+            bed_cache (np.ndarray): A 3D array showing subglacial topography at each iteration, or only the last topography.
+            loss_mc_cache (np.ndarray): A 1D array of mass conservation loss at each iteration. If the mass conservation loss is not used, return array of 0
+            loss_data_cache (np.ndarray): A 1D array of data misfit loss at each iteration. If the data misfit loss is not used, return array of 0
+            loss_cache (np.ndarray): A 1D array of total loss at each iteration.
+            step_cache (np.ndarray): A 1D array of boolean indicating if the step was accepted.
+            resampled_times (np.ndarray): A 2D array of number of times each pixel was updated.
+            blocks_cache (np.ndarray): A 1D array of info on block proposals at each iteration, (x coordinate for the center of the block, y coordinate for the center of the block, block size in x-direction, block size in y-direction).
+        """
+            
+        if rng_seed is None:
+            rng = np.random.default_rng()
+        elif isinstance(rng_seed, int):
+            rng = np.random.default_rng(seed=rng_seed)
+        elif isinstance(rng_seed, np.random._generator.Generator):
+            rng = rng_seed
+        else:
+            raise ValueError('Seed should be an integer, a NumPy random Generator, or None')
+        
+        xmin = np.min(self.xx)
+        xmax = np.max(self.xx)
+        ymin = np.min(self.yy)
+        ymax = np.max(self.yy)
+        
+        rows = self.xx.shape[0]
+        cols = self.xx.shape[1]
+        
+        float32_dtype = np.float32
+
+        # Empty Loss and Step caches
+        loss_cache = np.zeros(n_iter, dtype=float32_dtype)
+        loss_mc_cache = np.zeros(n_iter, dtype=float32_dtype)
+        loss_data_cache = np.zeros(n_iter, dtype=float32_dtype)
+        step_cache = np.zeros(n_iter, dtype=np.bool_)
+
+        # Topography at each iteration
+        if not only_save_last_bed:
+            bed_cache = np.zeros((n_iter, rows, cols))
+        else:
+            bed_cache = None
+
+        # NaN Block prosals
+        blocks_cache = np.full((n_iter, 4), np.nan, dtype=float32_dtype)
+        
+        # Bed Arrays
+        if self.detrend_map:
+            bed_c = self.initial_bed - self.trend
+            cond_bed_c = self.cond_bed - self.trend
+        else:
+            bed_c = self.initial_bed
+            cond_bed_c = self.cond_bed
+
+        
+        if self.do_transform:
+            nst_trans = self.nst_trans
+            z = nst_trans.transform(bed_c.reshape(-1,1))
+            z_cond_bed = nst_trans.transform(cond_bed_c.reshape(-1,1))
+        else:
+            z = bed_c.reshape(-1,1)
+            z_cond_bed = cond_bed_c.reshape(-1,1)
+            
+        cond_bed_data = np.array([self.xx.flatten(),self.yy.flatten(),z_cond_bed.flatten()])
+        cond_bed_df = pd.DataFrame(cond_bed_data.T, columns=['x','y','cond_bed'])
+        
+        resolution = self.resolution
+    
+        df_data = np.array([self.xx.flatten(),self.yy.flatten(),z.flatten(),self.data_mask.flatten(),self.mc_region_mask.flatten()])
+        psimdf = pd.DataFrame(df_data.T, columns=['x','y','z','data_mask','mc_region_mask'])
+        psimdf['resampled_times'] = 0
+        
+        #psimdf['data_mask'] = data_mask.flatten()
+        data_index = psimdf[psimdf['data_mask']==1].index
+        
+        #psimdf['mc_region_mask'] = mc_region_mask.flatten()
+        mask_index = psimdf[psimdf['mc_region_mask']==1].index
+        
+        # initialize loss
+        if self.detrend_map == True:
+            mc_res = Topography.get_mass_conservation_residual(bed_c + self.trend, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
+        else:
+            mc_res = Topography.get_mass_conservation_residual(bed_c, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
+        
+        data_diff = (bed_c - cond_bed_c).astype(float32_dtype, copy=False)
+        loss_prev, loss_prev_mc, loss_prev_data = self.loss(mc_res,data_diff)
+
+        loss_cache[0] = loss_prev
+        loss_mc_cache[0] = loss_prev_mc
+        loss_data_cache[0] = loss_prev_data
+        step_cache[0] = False
+        if not only_save_last_bed:
+            bed_cache[0] = bed_c
+        
+        for i in range(n_iter):
+            
+            rsm_center_index = mask_index[rng.integers(low=0, high=len(mask_index))]
+            rsm_x_center = psimdf.loc[rsm_center_index,'x']
+            rsm_y_center = psimdf.loc[rsm_center_index,'y']
+
+            block_size_x = rng.integers(low=self.block_min_x, high=self.block_max_x, size=1)[0]
+            block_size_x = int(block_size_x/2)*self.resolution
+            block_size_y = rng.integers(low=self.block_min_y, high=self.block_max_y, size=1)[0]
+            block_size_y = int(block_size_y/2)*self.resolution
+
+            blocks_cache[i,:]=[rsm_x_center,rsm_y_center,block_size_x,block_size_y]
+
+            #left corner in terms of meters
+            rsm_x_min = np.max([int(rsm_x_center - block_size_x),xmin])
+            rsm_x_max = np.min([int(rsm_x_center + block_size_x),xmax])
+            rsm_y_min = np.max([int(rsm_y_center - block_size_y),ymin])
+            rsm_y_max = np.min([int(rsm_y_center + block_size_y),ymax])
+
+            resampling_box_index = psimdf[(rsm_x_min<=psimdf['x'])&(psimdf['x']<rsm_x_max)&(rsm_y_min<=psimdf['y'])&(psimdf['y']<rsm_y_max)].index
+            
+            new_df = psimdf.copy() 
+            
+            # if enable random drop out
+            if self.sgs_param[2] == True:
+                
+                # intersect_index: in_block_cond_data
+                intersect_index = resampling_box_index.intersection(data_index)
+                intersect_index = rng.choice(intersect_index, size=int(intersect_index.shape[0]*(1-self.sgs_param[3])), replace=False)
+                
+                if (np.sum(psimdf.loc[intersect_index,['x']].values != cond_bed_df.loc[intersect_index,['x']].values) != 0):
+                    print('test of index sameness failed at iter ', i)
+                
+                if (np.sum(psimdf.loc[intersect_index,['y']].values != cond_bed_df.loc[intersect_index,['y']].values) != 0):
+                    print('test of index sameness failed at iter ', i)
+                    
+                # restore 70% of the conditioning data
+                new_df.loc[intersect_index,['z']] = cond_bed_df.loc[intersect_index,['cond_bed']].values
+                
+                # drop 30% of conditioning data inside the block
+                drop_index = resampling_box_index.difference(intersect_index)
+                
+            else:
+                
+                drop_index = resampling_box_index.difference(data_index)
+
+            new_df = new_df[~new_df.index.isin(drop_index)].copy()
+
+            Pred_grid_xy_change = gs.Gridding.prediction_grid(rsm_x_min, rsm_x_max - resolution, rsm_y_min, rsm_y_max - resolution, resolution)
+            x = np.reshape(Pred_grid_xy_change[:,0], (len(Pred_grid_xy_change[:,0]), 1))
+            y = np.flip(np.reshape(Pred_grid_xy_change[:,1], (len(Pred_grid_xy_change[:,1]), 1)))
+            Pred_grid_xy_change = np.concatenate((x,y),axis=1)
+
+            if self.vario_param[5] == 'Matern':
+                vario_p = self.vario_param
+            else:
+                vario_p = self.vario_param[:6]
+            sim2 = gs.Interpolation.okrige_sgs(Pred_grid_xy_change, new_df, 'x', 'y', 'z', self.sgs_param[0], vario_p, self.sgs_param[1], quiet=True, seed=rng) 
+
+            xy_grid = np.concatenate((Pred_grid_xy_change[:,0].reshape(-1,1),Pred_grid_xy_change[:,1].reshape(-1,1),np.array(sim2).reshape(-1,1)),axis=1)
+
+            psimdf_next = psimdf.copy()
+            psimdf_next.loc[resampling_box_index,['x','y','z']] = xy_grid
+            if self.do_transform:
+                bed_next = nst_trans.inverse_transform(np.array(psimdf_next['z']).reshape(-1,1)).reshape(rows,cols)
+            else:
+                bed_next = np.array(psimdf_next['z']).reshape(rows,cols)
+            
+            if self.detrend_map == True:
+                mc_res = Topography.get_mass_conservation_residual(bed_next + self.trend, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
+            else:
+                mc_res = Topography.get_mass_conservation_residual(bed_next, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
+            
+            data_diff = bed_next - cond_bed_c
+            loss_next, loss_next_mc, loss_next_data = self.loss(mc_res,data_diff)
+            
+            #make sure no bed elevation is greater than surface elevation
+            if self.detrend_map == True:
+                thickness = self.surf - (bed_next + self.trend)
+            else:
+                thickness = self.surf - bed_next
+            
+            if np.sum((thickness<=0)[self.grounded_ice_mask==1]) > 0:
+                loss_next = np.inf
+            
+            if loss_prev > loss_next:
+                acceptance_rate = 1
+                
+            else:
+                acceptance_rate = min(1,np.exp(loss_prev-loss_next))
+
+            u = rng.random()
+            
+            if (u <= acceptance_rate):
+                bed_c = bed_next
+                psimdf = psimdf_next
+                loss_cache[i] = loss_next
+                loss_mc_cache[i] = loss_next_mc
+                loss_data_cache[i] = loss_next_data
+                step_cache[i] = True
+                psimdf.loc[drop_index, 'resampled_times'] = psimdf.loc[drop_index, 'resampled_times'] + 1
+                
+                loss_prev = loss_next
+                loss_prev_mc = loss_next_mc
+                loss_prev_data = loss_next_data
+            
+            else:
+                loss_cache[i] = loss_prev
+                loss_mc_cache[i] = loss_prev_mc
+                loss_data_cache[i] = loss_prev_data
+                step_cache[i] = False
+
+            if not only_save_last_bed:
+                if self.detrend_map == True:
+                    bed_cache[i,:,:] = bed_c + self.trend
+                else:
+                    bed_cache[i,:,:] = bed_c
+
+            if i % info_per_iter == 0:
+                print(f'i: {i} mc loss: {loss_mc_cache[i]:.3e} loss: {loss_cache[i]:.3e} acceptance rate: {np.sum(step_cache)/(i+1)}')
+
+        resampled_times = psimdf.resampled_times.values.reshape((rows,cols))
+
+        if self.detrend_map == True:
+            last_bed = bed_c + self.trend
+        else:
+            last_bed = bed_c
+
+        if not only_save_last_bed:
+            return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
+        else:
+            return last_bed, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
