@@ -769,7 +769,7 @@ class chain_crf(chain):
         crf_weight, dist, dist_rescale, dist_logi = RF.get_crf_weight(self.xx,self.yy,self.data_mask)
         self.crf_data_weight = crf_weight
 
-    def run(self, n_iter, RF, rng_seed=None, only_save_last_bed=False, info_per_iter = 1000):
+    def run(self, n_iter, RF, rng_seed=None, only_save_last_bed=True, info_per_iter = 1000):
         """Runs the MCMC sampling chain to generate topography realizations.
 
         Args:
