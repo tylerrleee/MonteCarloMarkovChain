@@ -14,6 +14,17 @@ This framework:
 - Uses **variogram-based spatial modeling** to capture the statistical structure of the terrain.  
 - Provides modular, flexible Python scripts and Jupyter notebooks to adapt the workflow for **different datasets, scales, and regions**.  
 
+## Figures
+
+#### MCMC Realization after 2.2m iterations
+<img src="./visualizations/mcmc_realization_viz.png" alt="MCMC Realization plot" width="850">
+
+---
+
+#### Difference between Initial vs Last iteration at High Velocity region
+<img src="./visualizations/difference_plot_with_tracks (1).png" alt="Difference plot" width="550">
+
+
 ## Reproducibility
 
 ### Conda Virtual Environment & Installing dependencies + necessary packages
@@ -49,4 +60,6 @@ Topography: Functionalities for subglacial topography application, including ret
 MCMC: Core geostatistics and Monte Carlo Markov Chain utilities
 
 # Software 
-Python 3.10.9
+Python 3.10.9 
+
+<a href="https://github.com/NiyaShao/geostatisticalMCMC" target=blank_> gstatsmcmc - Niya Shao </a>
