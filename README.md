@@ -1,6 +1,8 @@
-# Monte Carlo Markov Chain (MCMC) Geostatistical Inversion
+# Monte Carlo Markov Chain Geostatistical Inversion on ***BindShadler & MacAyeal Ice Streams***
 
-This repository contains an implementation of the **Geostatistical Monte Carlo Markov Chain (MCMC)** method for **inversion and spatial simulation**. The project provides a Python-based framework designed to reproduce and extend the methodology described in the publication:
+This repository contains an implementation of the **MCMC** method for **inversion and spatial simulation** on BindShadler & MacAyeal Ice Streams *(its coordinates can be found in config.py)*.
+
+The project provides a Python-based framework designed to reproduce and extend the methodology described in the publication:
 
  **Reference:** [Geostatistical Monte Carlo Markov Chain for Subglacial Topography Inversion](https://doi.org/10.31223/X5SB2R)
 
@@ -13,6 +15,7 @@ This framework:
 - Applies **Bayesian inference and MCMC sampling** to estimate hidden spatial fields based on observed data and prior geological knowledge.  
 - Uses **variogram-based spatial modeling** to capture the statistical structure of the terrain.  
 - Provides modular, flexible Python scripts and Jupyter notebooks to adapt the workflow for **different datasets, scales, and regions**.  
+- Compares its mass residual loss to BedMachine
 
 ## Figures
 
