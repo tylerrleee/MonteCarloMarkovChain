@@ -16,8 +16,228 @@ import gstatsim as gs
 import gstools as gstools
 import skgstat as skg
 from skgstat import models
+from tqdm.auto import tqdm
+from IPython import display
+import math
 
-from . import Topography
+from gstatsmcmc import Topography
+from gstatsmcmc import gstatsim_custom as gsim
+from copy import deepcopy
+import numbers
+
+# code adopted from gstatsim_custom by Michael
+def _preprocess(xx, yy, grid, variogram, sim_mask, radius, stencil):
+    """
+    Sequential Gaussian Simulation with ordinary or simple kriging using nearest neighbors found in an octant search.
+
+    Args:
+        xx (numpy.ndarray): 2D array of x-coordinates.
+        yy (numpy.ndarray): 2D array of y-coordinates.
+        grid (numpy.ndarray): 2D array of simulation grid. NaN everywhere except for conditioning data.
+        variogram (dictionary): Variogram parameters. Must include, major_range, minor_range, sill, nugget, vtype.
+        sim_mask (numpy.ndarray or None): Mask True where to do simulation. Default None will do whole grid.
+        radius (int, float): Minimum search radius for nearest neighbors. Default is 100 km.
+        stencil (numpy.ndarray or None): Mask to use as 'cookie cutter' for nearest neighbor search.
+            Default None a circular stencil will be used.
+
+    Returns:
+        (out_grid, nst_trans, cond_msk, inds, vario, global_mean, stencil)
+    """
+    
+    # get masks and gaussian transform data
+    cond_msk = ~np.isnan(grid)
+    #out_grid, nst_trans = gaussian_transformation(grid, cond_msk)
+    out_grid = grid.copy()
+
+    if sim_mask is None:
+        sim_mask = np.full(xx.shape, True)
+
+    # get index coordinates and filter with sim_mask
+    # maybe this should be input rather than 
+    ii, jj = np.meshgrid(np.arange(xx.shape[0]), np.arange(xx.shape[1]), indexing='ij')
+    inds = np.array([ii[sim_mask].flatten(), jj[sim_mask].flatten()]).T
+
+    vario = deepcopy(variogram)
+
+    # turn scalar variogram parameters into grid
+    for key in vario:
+        if isinstance(vario[key], numbers.Number):
+            vario[key] = np.full(grid.shape, vario[key])
+
+    # mean of conditioning data for simple kriging
+    global_mean = np.mean(out_grid[cond_msk])
+
+    # make stencil for faster nearest neighbor search
+    if stencil is None:
+        stencil, _, _ = gsim.neighbors.make_circle_stencil(xx[0,:], radius)
+
+
+    return out_grid, cond_msk, inds, vario, global_mean, stencil
+
+# code adopted from gstatsim_custom by Michael
+def sgs(xx, yy, grid, variogram, radius=100e3, num_points=20, ktype='ok', sim_mask=None, quiet=False, stencil=None, rcond=None, seed=None):
+    """
+    Sequential Gaussian Simulation with ordinary or simple kriging using nearest neighbors found in an octant search.
+
+    Args:
+        xx (numpy.ndarray): 2D array of x-coordinates.
+        yy (numpy.ndarray): 2D array of y-coordinates.
+        grid (numpy.ndarray): 2D array of simulation grid. NaN everywhere except for conditioning data.
+        variogram (dictionary): Variogram parameters. Must include, major_range, minor_range, sill, nugget, vtype.
+        radius (int, float): Minimum search radius for nearest neighbors. Default is 100 km.
+        num_points (int): Number of nearest neighbors to find. Default is 20.
+        ktype (string): 'ok' for ordinary kriging or 'sk' for simple kriging. Default is 'ok'.
+        sim_mask (numpy.ndarray or None): Mask True where to do simulation. Default None will do whole grid.
+        quiet (book): Turn off progress bar when True. Default False.
+        stencil (numpy.ndarray or None): Mask to use as 'cookie cutter' for nearest neighbor search.
+            Default None a circular stencil will be used.
+        seed (int, None, or numpy.random.Generator): If None, a fresh random number generator (RNG)
+            will be created. If int, a RNG will be instantiated with that seed. If an instance of
+            RNG, that will be used.
+
+    Returns:
+        (numpy.ndarray): 2D simulation
+    """
+    
+    # check arguments
+    gsim.interpolate._sanity_checks(xx, yy, grid, variogram, radius, num_points, ktype, sim_mask)
+
+    # preprocess some grids and variogram parameters
+    out_grid, cond_msk, inds, vario, global_mean, stencil = _preprocess(xx, yy, grid, variogram, sim_mask, radius, stencil)
+
+    # make random number generator if not provided
+    rng = gsim.utilities.get_random_generator(seed)
+
+    # shuffle indices
+    rng.shuffle(inds)
+
+    ii, jj = np.meshgrid(np.arange(xx.shape[0]), np.arange(xx.shape[1]), indexing='ij')
+
+    # iterate over indicies
+    for k in range(inds.shape[0]):
+        
+        i, j = inds[k]
+
+        nearest = np.array([])
+        rad = radius
+        stenc = stencil
+
+        # check if grid cell needs to be simulated
+        if cond_msk[i, j] == False:
+            # make local variogram
+            local_vario = {}
+            for key in vario.keys():
+                if key=='vtype':
+                    local_vario[key] = vario[key]
+                else:
+                    local_vario[key] = vario[key][i,j]
+
+            # find nearest neighbors, increasing search distance if none are found
+            while nearest.shape[0] == 0:
+                nearest = gsim.neighbors.neighbors(i, j, ii, jj, xx, yy, out_grid, cond_msk, rad, num_points, stencil=stenc)
+                if nearest.shape[0] > 0:
+                    break
+                else:
+                    rad += 100e3
+                    stenc, _, _ = gsim.neighbors.make_circle_stencil(xx[0,:], rad)
+
+            # solve kriging equations
+            if ktype=='ok':
+                est, var = gsim._krige.ok_solve((xx[i,j], yy[i,j]), nearest, local_vario, rcond)
+            elif ktype=='sk':
+                est, var = gsim._krige.sk_solve((xx[i,j], yy[i,j]), nearest, local_vario, global_mean, rcond)
+
+            var = np.abs(var)
+
+            # put value in grid
+            # out_grid[i,j] = rng.normal(est, np.sqrt(var), 1)
+
+            out_grid[i,j] = rng.normal(est, np.sqrt(var), 1)
+            cond_msk[i,j] = True
+
+    #sim_trans = nst_trans.inverse_transform(out_grid.reshape(-1,1)).squeeze().reshape(xx.shape)
+
+    return out_grid
+
+
+def spectral_synthesis_field(RF, shape, res=1.0):
+    """
+    Generate a 2D Gaussian random field using FFT-based spectral synthesis.
+    This method uses a fast Fourier transform approach to produce spatially correlated
+    random fields consistent with the variogram model stored in the RandField object.
+
+    Args:
+        RF (RandField): 
+        shape (tuple[int,int]): 
+        res (float, optional):
+
+    Returns:
+        np.ndarray:
+            A 2D NumPy array of shape (ny, nx) representing a single random field 
+            realization generated using the FFT-based spectral synthesis method.
+            The field has zero mean and unit variance before scaling, then scaled 
+            by the sampled vertical standard deviation (`scale`) and augmented 
+            with Gaussian nugget noise. 
+    """
+    
+    ny, nx = shape
+    rng = RF.rng
+
+    # Sample model parameters
+    scale = rng.uniform(RF.scale_min, RF.scale_max) / 3.0
+    nug = rng.uniform(0.0, RF.nugget_max)
+
+    if not RF.isotropic:
+        range_x = rng.uniform(RF.range_min_x, RF.range_max_x)
+        range_y = rng.uniform(RF.range_min_y, RF.range_max_y)
+    else:
+        range_x = range_y = rng.uniform(RF.range_min_x, RF.range_max_x)
+
+    model_name = RF.model_name
+    if model_name == "Gaussian":
+        len_x, len_y = range_x / np.sqrt(3), range_y / np.sqrt(3)
+    elif model_name == "Exponential":
+        len_x, len_y = range_x / 3.0, range_y / 3.0
+    else:  # Matern
+        len_x, len_y = range_x / 2.0, range_y / 2.0
+        #len_x, len_y = range_x, range_y
+
+    #print(len_x, len_y, '3')
+
+    # Frequency grids
+    kx = np.fft.fftfreq(nx, d=res) * 2 * np.pi
+    ky = np.fft.fftfreq(ny, d=res) * 2 * np.pi
+    kyv, kxv = np.meshgrid(ky, kx, indexing="ij")
+    k = np.sqrt(kxv**2 + kyv**2) + 1e-10
+
+    # Spectral power density
+    if model_name == "Gaussian":
+        a = np.sqrt((len_x * len_y))
+        S = np.exp(-0.5 * (a * k) ** 2)
+    elif model_name == "Exponential":
+        a = np.sqrt((len_x * len_y))
+        S = 1.0 / (1.0 + (a * k) ** 2) ** 1.5
+    else:  # Matern (approximate)
+        nu = RF.smoothness or 1.0
+        a = np.sqrt((len_x * len_y))
+        #S = 1.0 / (1.0 + (a * k) ** 2) ** (nu + 1)
+        constant = (4 * np.pi * math.gamma(nu + 1) * (2 * nu)**nu) / (math.gamma(nu) * a**(2*nu))
+        keppa = 2*nu/(a**2)
+        S = constant * ((keppa + 4 * np.pi * k**2) ** (-nu - 1))
+
+    # Complex white noise
+    noise = np.random.normal(size=(ny, nx)) + 1j * np.random.normal(size=(ny, nx))
+    freq_field = noise * np.sqrt(S)
+
+    # Inverse FFT
+    field = np.fft.ifft2(freq_field).real
+    field = (field - np.mean(field)) / (np.std(field) + 1e-12)
+
+    # Apply scaling and nugget noise
+    field = field * scale + np.random.normal(0, np.sqrt(nug), size=(ny, nx))
+
+    return field
+
 
 def fit_variogram(data, coords, roughness_region_mask, maxlag, n_lags=50, samples=0.6, subsample=100000, data_for_trans = []):
     """
@@ -147,7 +367,7 @@ class RandField:
     """
     
     def __init_func(self):
-        print("Before using the `RandField` object in an MCMC chain or for field generation, call method `set_block_sizes` and method`set_weight_param` to initialize block size ranges and conditional weighting parameters.")
+        print("Before using the `RandField` object in an MCMC chain or for field generation, \n call function `set_block_sizes` to initialize block size ranges; \n call function `set_weight_param` to set up conditional weighting parameters; \n call function 'set_generation_method' to set up method used to generate random fields.")
 
     def __init__(self,range_min_x,range_max_x,range_min_y,range_max_y,scale_min,scale_max,nugget_max,model_name,isotropic,smoothness = None, rng_seed=None):
         """Initializes the RandField object.
@@ -200,6 +420,16 @@ class RandField:
         self.isotropic = isotropic
         
         self.__init_func()
+        
+    def set_generation_method(self,spectral):
+        """
+        Define the generation method. If spectral is False, then use gstools RandMeth generator. Otherwise, use spectral systhesis to generate random field
+        
+        Args:
+            spectral (bool): Whether use spectral synthesis to generate random field
+        """
+        
+        self.spectral = spectral
            
     def set_block_sizes(self,min_block_x,max_block_x,min_block_y,max_block_y,steps=5):
         """
@@ -356,10 +586,14 @@ class RandField:
 
         fields = np.zeros((n,len(Y),len(X)))
         for i in range(n):
+            # Covariance model field generation
             srf = gstools.SRF(model)
             fields[i,:,:] = srf.structured([X, Y]).T*scale + _mean
+            
+            # Spectral synthesis field generation
+            #fields[i,:,:] = spectral_synthesis_field(self, (len(Y), len(X)), res=self.resolution)
 
-        return fields
+        return fields[0,:,:]
     
     def min_dist(hard_mat, xx, yy):
         """
@@ -466,8 +700,13 @@ class RandField:
         #in-case of a weird bug
         while True:
             ## TODO: have to modify this for n>1
-            f = self.get_random_field(x_uniq, y_uniq)
-            f = f[0,:,:]
+            #f = self.get_random_field(x_uniq, y_uniq)
+            if self.spectral == True:
+                f = spectral_synthesis_field(self, (len(y_uniq), len(x_uniq)), res=self.resolution)
+            else:
+                f = self.get_random_field(x_uniq, y_uniq)
+                
+            #f = f[0,:,:]
             if (np.sum(np.isnan(f))) != 0:
                 print('f have nan')
                 continue
@@ -769,7 +1008,7 @@ class chain_crf(chain):
         crf_weight, dist, dist_rescale, dist_logi = RF.get_crf_weight(self.xx,self.yy,self.data_mask)
         self.crf_data_weight = crf_weight
 
-    def run(self, n_iter, RF, rng_seed=None, only_save_last_bed=True, info_per_iter = 1000):
+    def run(self, n_iter, RF, rng_seed=None, only_save_last_bed=False, info_per_iter = 1000, plot=True, progress_bar=True):
         """Runs the MCMC sampling chain to generate topography realizations.
 
         Args:
@@ -828,7 +1067,39 @@ class chain_crf(chain):
         
         #crf_weight = self.crf_data_weight
 
-        for i in range(1,n_iter):
+        if plot:
+            fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(12,5))
+            (line_loss,) = ax_loss.plot([], [], color='tab:blue', label='Loss')
+            (line_acc,)  = ax_acc.plot([], [], color='tab:green', label='Acceptance Rate')
+            #NOTE use get_mass_conservation_residual on BedMachine data
+            # bm_loss = 
+            # ax_loss.axhline(bm_loss, ls='--', label='BedMachine loss') 
+            
+            ax_loss.set_xlabel("Iteration")
+            ax_loss.set_ylabel("Loss")
+            ax_loss.set_title("MCMC Loss")
+
+            ax_acc.set_xlabel("Iteration")
+            ax_acc.set_ylabel("Acceptance Rate (%)")
+            ax_acc.set_ylim(0, 100)
+            ax_acc.set_title("MCMC Acceptance Rate")
+
+            ax_loss.legend()
+            ax_acc.legend()
+            
+            display_handle = display.display(fig, display_id=True)
+            plt.tight_layout()
+
+        # Track acceptance rate
+        accepted_count = 0
+        acceptance_rates = []
+
+        if progress_bar == True:
+            iterator = tqdm(range(1,n_iter)) 
+        else:
+            iterator = range(1,n_iter)
+        #pbar = tqdm(range(1,n_iter))
+        for i in iterator:
                         
             #not done yet
             f = RF.get_rfblock()
@@ -873,10 +1144,35 @@ class chain_crf(chain):
                 bed_next = np.where(self.region_mask, bed_next, bed_c)
             else:
                 bed_next = np.where(self.grounded_ice_mask, bed_next, bed_c)
-                
-            mc_res = Topography.get_mass_conservation_residual(bed_next, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
+
+            # Define Padded Block to solve gradient & mass conservation residual (MSR)
+            pad = 1 
+            c_xmin = np.max([0, bxmin - pad])              # neighbor to the left boundary
+            c_xmax = np.min([bed_c.shape[0], bxmax + pad]) # neighbor to the right boundary
+            c_ymin = np.max([0, bymin - pad])              # neighbor to the lower boundary
+            c_ymax = np.min([bed_c.shape[1], bymax + pad]) # neighbor to the upper boundary
+
+            # Define the BLOCK index to compute MSR -- which needs neighbors for np.gradient
+            local_bed = bed_next[c_xmin:c_xmax, c_ymin:c_ymax]
+            local_surf = self.surf[c_xmin:c_xmax, c_ymin:c_ymax]
+            local_velx = self.velx[c_xmin:c_xmax, c_ymin:c_ymax]
+            local_vely = self.vely[c_xmin:c_xmax, c_ymin:c_ymax]
+            local_dhdt = self.dhdt[c_xmin:c_xmax, c_ymin:c_ymax]
+            local_smb  = self.smb[c_xmin:c_xmax, c_ymin:c_ymax]
+
+            local_mc_res = Topography.get_mass_conservation_residual(
+                        local_bed, local_surf, local_velx, local_vely, local_dhdt, local_smb, resolution)   
+            mc_res_candidate = mc_res.copy()
+            # Our TARGET slice index
+            valid_x_start = bxmin - c_xmin
+            valid_x_end = valid_x_start + (bxmax - bxmin)
+            valid_y_start = bymin - c_ymin
+            valid_y_end = valid_y_start + (bymax - bymin)
+            mc_res_candidate[bxmin:bxmax, bymin:bymax] = local_mc_res[valid_x_start:valid_x_end, valid_y_start:valid_y_end]
+
+
             data_diff = bed_next - self.cond_bed
-            loss_next, loss_next_mc, loss_next_data = self.loss(mc_res,data_diff)
+            loss_next, loss_next_mc, loss_next_data = self.loss(mc_res_candidate,data_diff)
            
             #make sure no bed elevation is greater than surface elevation
             block_thickness = self.surf[bxmin:bxmax,bymin:bymax] - bed_next[bxmin:bxmax,bymin:bymax]
@@ -898,6 +1194,7 @@ class chain_crf(chain):
             if (u <= acceptance_rate):
                 bed_c = bed_next.copy()
                 
+                mc_res = mc_res_candidate # Update global residual if new slice is accepted
                 loss_prev = loss_next
                 loss_prev_mc = loss_next_mc
                 loss_cache[i] = loss_next
@@ -910,6 +1207,8 @@ class chain_crf(chain):
                     resampled_times[bxmin:bxmax,bymin:bymax] += self.region_mask[bxmin:bxmax,bymin:bymax]
                 else:
                     resampled_times[bxmin:bxmax,bymin:bymax] += self.grounded_ice_mask[bxmin:bxmax,bymin:bymax]
+
+                accepted_count += 1
                 
             else:
                 loss_mc_cache[i] = loss_prev_mc
@@ -920,8 +1219,41 @@ class chain_crf(chain):
             if not only_save_last_bed:
                 bed_cache[i,:,:] = bed_c
 
-            if i%info_per_iter == 0:
-                print(f'i: {i} mc loss: {loss_mc_cache[i]:.3e} data loss: {loss_data_cache[i]:.3e} loss: {loss_cache[i]:.3e} acceptance rate: {np.sum(step_cache)/(i+1)}')
+            if progress_bar:
+                # Update tqdm progress bar
+                iterator.set_postfix({
+                    'mc loss'   :   f'{loss_mc_cache[i]:.3e}',
+                    'data loss' :   f'{loss_data_cache[i]:.3e}',
+                    'loss'      :   f'{loss_cache[i]:.3e}',
+                    'acceptance rate'   :   f'{np.sum(step_cache)/(i+1):.6f}'
+                })
+            else:
+                if i%info_per_iter == 0:
+                    print(f'i: {i} mc loss: {loss_mc_cache[i]:.3e} data loss: {loss_data_cache[i]:.3e} loss: {loss_cache[i]:.3e} acceptance rate: {np.sum(step_cache)/(i+1)}')
+
+            # Calculate acceptance rate for plot
+            total_acceptance = (accepted_count / (i + 1)) * 100
+            acceptance_rates.append(total_acceptance)
+
+            if plot:
+                if i < 5000:
+                    update_interval = 100
+                else:
+                    update_interval = info_per_iter
+
+                if i % update_interval == 0:
+                    # Update loss line
+                    line_loss.set_data(range(i + 1), loss_cache[:i + 1])
+                    ax_loss.relim()
+                    ax_loss.autoscale_view()
+
+                    # Update acceptance rate line
+                    line_acc.set_data(range(len(acceptance_rates)), acceptance_rates)
+                    ax_acc.set_ylim(0, 100)
+                    ax_acc.relim()
+                    ax_acc.autoscale_view()
+
+                    display_handle.update(fig)
                 
         if not only_save_last_bed:
             return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
@@ -1108,11 +1440,11 @@ class chain_sgs(chain):
         blocks_cache = np.full((n_iter, 4), np.nan)
         
         if self.detrend_map:
-            bed_c = self.initial_bed - self.trend
-            cond_bed_c = self.cond_bed - self.trend
+            bed_c = (self.initial_bed - self.trend).copy()
+            cond_bed_c = (self.cond_bed - self.trend).copy()
         else:
-            bed_c = self.initial_bed
-            cond_bed_c = self.cond_bed
+            bed_c = self.initial_bed.copy()
+            cond_bed_c = self.cond_bed.copy()
 
         
         if self.do_transform:
@@ -1120,8 +1452,8 @@ class chain_sgs(chain):
             z = nst_trans.transform(bed_c.reshape(-1,1))
             z_cond_bed = nst_trans.transform(cond_bed_c.reshape(-1,1))
         else:
-            z = bed_c.reshape(-1,1)
-            z_cond_bed = cond_bed_c.reshape(-1,1)
+            z = bed_c.copy().reshape(-1,1)
+            z_cond_bed = cond_bed_c.copy().reshape(-1,1)
             
         cond_bed_data = np.array([self.xx.flatten(),self.yy.flatten(),z_cond_bed.flatten()])
         cond_bed_df = pd.DataFrame(cond_bed_data.T, columns=['x','y','cond_bed'])
@@ -1287,11 +1619,9 @@ class chain_sgs(chain):
         else:
             return last_bed, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
 
-    def run_tylerle(self, n_iter, rng_seed=None, only_save_last_bed=False, info_per_iter=1000):
+    def run_newsgs(self, n_iter, rng_seed=None, only_save_last_bed=False, info_per_iter=1000):
         """
-        Issues to solve: Memory issues as we store more float64 simulations -- storing 100k instances, of zeros or simulated. 
-
-        Run the MCMC chain using block-based SGS updates
+        Run the MCMC chain using block-based SGS updates, with the new gstatsim_custom code
         
         Args:
             n_iter (int): Number of iterations in the MCMC chain.
@@ -1326,54 +1656,33 @@ class chain_sgs(chain):
         rows = self.xx.shape[0]
         cols = self.xx.shape[1]
         
-        float32_dtype = np.float32
-
-        # Empty Loss and Step caches
-        loss_cache = np.zeros(n_iter, dtype=float32_dtype)
-        loss_mc_cache = np.zeros(n_iter, dtype=float32_dtype)
-        loss_data_cache = np.zeros(n_iter, dtype=float32_dtype)
-        step_cache = np.zeros(n_iter, dtype=np.bool_)
-
-        # Topography at each iteration
+        loss_cache = np.zeros(n_iter)
+        loss_mc_cache = np.zeros(n_iter)
+        loss_data_cache = np.zeros(n_iter)
+        step_cache = np.zeros(n_iter)
         if not only_save_last_bed:
             bed_cache = np.zeros((n_iter, rows, cols))
-        else:
-            bed_cache = None
+        blocks_cache = np.full((n_iter, 4), np.nan)
+        resampled_times = np.zeros(self.xx.shape)
 
-        # NaN Block prosals
-        blocks_cache = np.full((n_iter, 4), np.nan, dtype=float32_dtype)
-        
-        # Bed Arrays
         if self.detrend_map:
-            bed_c = self.initial_bed - self.trend
-            cond_bed_c = self.cond_bed - self.trend
+            bed_c = (self.initial_bed - self.trend).copy()
+            cond_bed_c = (self.cond_bed - self.trend).copy()
         else:
-            bed_c = self.initial_bed
-            cond_bed_c = self.cond_bed
-
-        
+            bed_c = self.initial_bed.copy()
+            cond_bed_c = self.cond_bed.copy()
+       
         if self.do_transform:
             nst_trans = self.nst_trans
             z = nst_trans.transform(bed_c.reshape(-1,1))
             z_cond_bed = nst_trans.transform(cond_bed_c.reshape(-1,1))
         else:
-            z = bed_c.reshape(-1,1)
-            z_cond_bed = cond_bed_c.reshape(-1,1)
-            
-        cond_bed_data = np.array([self.xx.flatten(),self.yy.flatten(),z_cond_bed.flatten()])
-        cond_bed_df = pd.DataFrame(cond_bed_data.T, columns=['x','y','cond_bed'])
-        
-        resolution = self.resolution
+            z = bed_c.copy().reshape(-1,1)
+            z_cond_bed = cond_bed_c.copy().reshape(-1,1)
     
-        df_data = np.array([self.xx.flatten(),self.yy.flatten(),z.flatten(),self.data_mask.flatten(),self.mc_region_mask.flatten()])
-        psimdf = pd.DataFrame(df_data.T, columns=['x','y','z','data_mask','mc_region_mask'])
-        psimdf['resampled_times'] = 0
-        
-        #psimdf['data_mask'] = data_mask.flatten()
-        data_index = psimdf[psimdf['data_mask']==1].index
-        
-        #psimdf['mc_region_mask'] = mc_region_mask.flatten()
-        mask_index = psimdf[psimdf['mc_region_mask']==1].index
+        z_cond_bed = z_cond_bed.reshape(self.xx.shape)
+
+        resolution = self.resolution
         
         # initialize loss
         if self.detrend_map == True:
@@ -1381,83 +1690,72 @@ class chain_sgs(chain):
         else:
             mc_res = Topography.get_mass_conservation_residual(bed_c, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
         
-        data_diff = (bed_c - cond_bed_c).astype(float32_dtype, copy=False)
+        data_diff = bed_c - cond_bed_c
         loss_prev, loss_prev_mc, loss_prev_data = self.loss(mc_res,data_diff)
-
+    
         loss_cache[0] = loss_prev
         loss_mc_cache[0] = loss_prev_mc
         loss_data_cache[0] = loss_prev_data
         step_cache[0] = False
         if not only_save_last_bed:
             bed_cache[0] = bed_c
+    
+        rad = self.sgs_param[1]
+        neighbors = self.sgs_param[0]
+        
+        if self.vario_param[5] == 'Matern':
+            vario = {
+                'azimuth' : self.vario_param[0],
+                'nugget' : self.vario_param[1],
+                'major_range' : self.vario_param[2],
+                'minor_range' : self.vario_param[3],
+                'sill' :  self.vario_param[4],
+                'vtype' : self.vario_param[5],
+                's' : self.vario_param[6]
+            }
+        else:
+            vario = {
+                'azimuth' : self.vario_param[0],
+                'nugget' : self.vario_param[1],
+                'major_range' : self.vario_param[2],
+                'minor_range' : self.vario_param[3],
+                'sill' :  self.vario_param[4],
+                'vtype' : self.vario_param[5],
+            }
         
         for i in range(n_iter):
-            
-            rsm_center_index = mask_index[rng.integers(low=0, high=len(mask_index))]
-            rsm_x_center = psimdf.loc[rsm_center_index,'x']
-            rsm_y_center = psimdf.loc[rsm_center_index,'y']
-
+    
+            while True:
+                indexx = rng.integers(low=0, high=bed_c.shape[0], size=1)[0]
+                indexy = rng.integers(low=0, high=bed_c.shape[1], size=1)[0]
+                if self.region_mask[indexx,indexy] == 1:
+                    break
+    
             block_size_x = rng.integers(low=self.block_min_x, high=self.block_max_x, size=1)[0]
-            block_size_x = int(block_size_x/2)*self.resolution
             block_size_y = rng.integers(low=self.block_min_y, high=self.block_max_y, size=1)[0]
-            block_size_y = int(block_size_y/2)*self.resolution
-
-            blocks_cache[i,:]=[rsm_x_center,rsm_y_center,block_size_x,block_size_y]
-
-            #left corner in terms of meters
-            rsm_x_min = np.max([int(rsm_x_center - block_size_x),xmin])
-            rsm_x_max = np.min([int(rsm_x_center + block_size_x),xmax])
-            rsm_y_min = np.max([int(rsm_y_center - block_size_y),ymin])
-            rsm_y_max = np.min([int(rsm_y_center + block_size_y),ymax])
-
-            resampling_box_index = psimdf[(rsm_x_min<=psimdf['x'])&(psimdf['x']<rsm_x_max)&(rsm_y_min<=psimdf['y'])&(psimdf['y']<rsm_y_max)].index
-            
-            new_df = psimdf.copy() 
-            
-            # if enable random drop out
-            if self.sgs_param[2] == True:
-                
-                # intersect_index: in_block_cond_data
-                intersect_index = resampling_box_index.intersection(data_index)
-                intersect_index = rng.choice(intersect_index, size=int(intersect_index.shape[0]*(1-self.sgs_param[3])), replace=False)
-                
-                if (np.sum(psimdf.loc[intersect_index,['x']].values != cond_bed_df.loc[intersect_index,['x']].values) != 0):
-                    print('test of index sameness failed at iter ', i)
-                
-                if (np.sum(psimdf.loc[intersect_index,['y']].values != cond_bed_df.loc[intersect_index,['y']].values) != 0):
-                    print('test of index sameness failed at iter ', i)
-                    
-                # restore 70% of the conditioning data
-                new_df.loc[intersect_index,['z']] = cond_bed_df.loc[intersect_index,['cond_bed']].values
-                
-                # drop 30% of conditioning data inside the block
-                drop_index = resampling_box_index.difference(intersect_index)
-                
+    
+            blocks_cache[i,:]=[indexx,indexy,block_size_x,block_size_y]
+    
+            #find the index of the block side, make sure the block is within the edge of the map
+            bxmin = np.max((0,int(indexx-block_size_x/2)))
+            bxmax = np.min((bed_c.shape[0],int(indexx+block_size_x/2)))
+            bymin = np.max((0,int(indexy-block_size_y/2)))
+            bymax = np.min((bed_c.shape[1],int(indexy+block_size_y/2)))
+    
+            if self.do_transform == True:
+                bed_tosim = nst_trans.transform(bed_c.reshape(-1,1)).reshape(self.xx.shape)
             else:
-                
-                drop_index = resampling_box_index.difference(data_index)
-
-            new_df = new_df[~new_df.index.isin(drop_index)].copy()
-
-            Pred_grid_xy_change = gs.Gridding.prediction_grid(rsm_x_min, rsm_x_max - resolution, rsm_y_min, rsm_y_max - resolution, resolution)
-            x = np.reshape(Pred_grid_xy_change[:,0], (len(Pred_grid_xy_change[:,0]), 1))
-            y = np.flip(np.reshape(Pred_grid_xy_change[:,1], (len(Pred_grid_xy_change[:,1]), 1)))
-            Pred_grid_xy_change = np.concatenate((x,y),axis=1)
-
-            if self.vario_param[5] == 'Matern':
-                vario_p = self.vario_param
+                bed_tosim = bed_c.copy()
+    
+            bed_tosim[bxmin:bxmax,bymin:bymax] = z_cond_bed[bxmin:bxmax,bymin:bymax].copy()
+            sim_mask = np.full(self.xx.shape, False)
+            sim_mask[bxmin:bxmax,bymin:bymax] = True
+            newsim = sgs(self.xx, self.yy, bed_tosim, vario, rad, neighbors, sim_mask = sim_mask)
+    
+            if self.do_transform == True:
+                bed_next = nst_trans.inverse_transform(newsim.reshape(-1,1)).reshape(rows,cols)
             else:
-                vario_p = self.vario_param[:6]
-            sim2 = gs.Interpolation.okrige_sgs(Pred_grid_xy_change, new_df, 'x', 'y', 'z', self.sgs_param[0], vario_p, self.sgs_param[1], quiet=True, seed=rng) 
-
-            xy_grid = np.concatenate((Pred_grid_xy_change[:,0].reshape(-1,1),Pred_grid_xy_change[:,1].reshape(-1,1),np.array(sim2).reshape(-1,1)),axis=1)
-
-            psimdf_next = psimdf.copy()
-            psimdf_next.loc[resampling_box_index,['x','y','z']] = xy_grid
-            if self.do_transform:
-                bed_next = nst_trans.inverse_transform(np.array(psimdf_next['z']).reshape(-1,1)).reshape(rows,cols)
-            else:
-                bed_next = np.array(psimdf_next['z']).reshape(rows,cols)
+                bed_next = newsim.copy()
             
             if self.detrend_map == True:
                 mc_res = Topography.get_mass_conservation_residual(bed_next + self.trend, self.surf, self.velx, self.vely, self.dhdt, self.smb, resolution)
@@ -1467,7 +1765,6 @@ class chain_sgs(chain):
             data_diff = bed_next - cond_bed_c
             loss_next, loss_next_mc, loss_next_data = self.loss(mc_res,data_diff)
             
-            #make sure no bed elevation is greater than surface elevation
             if self.detrend_map == True:
                 thickness = self.surf - (bed_next + self.trend)
             else:
@@ -1481,44 +1778,40 @@ class chain_sgs(chain):
                 
             else:
                 acceptance_rate = min(1,np.exp(loss_prev-loss_next))
-
+    
             u = rng.random()
             
             if (u <= acceptance_rate):
                 bed_c = bed_next
-                psimdf = psimdf_next
                 loss_cache[i] = loss_next
                 loss_mc_cache[i] = loss_next_mc
                 loss_data_cache[i] = loss_next_data
                 step_cache[i] = True
-                psimdf.loc[drop_index, 'resampled_times'] = psimdf.loc[drop_index, 'resampled_times'] + 1
                 
                 loss_prev = loss_next
                 loss_prev_mc = loss_next_mc
                 loss_prev_data = loss_next_data
-            
+                resampled_times[bxmin:bxmax,bymin:bymax] += 1
             else:
                 loss_cache[i] = loss_prev
                 loss_mc_cache[i] = loss_prev_mc
                 loss_data_cache[i] = loss_prev_data
                 step_cache[i] = False
-
+    
             if not only_save_last_bed:
                 if self.detrend_map == True:
                     bed_cache[i,:,:] = bed_c + self.trend
                 else:
                     bed_cache[i,:,:] = bed_c
-
+    
             if i % info_per_iter == 0:
                 print(f'i: {i} mc loss: {loss_mc_cache[i]:.3e} loss: {loss_cache[i]:.3e} acceptance rate: {np.sum(step_cache)/(i+1)}')
-
-        resampled_times = psimdf.resampled_times.values.reshape((rows,cols))
-
+    
         if self.detrend_map == True:
             last_bed = bed_c + self.trend
         else:
             last_bed = bed_c
-
+    
         if not only_save_last_bed:
             return bed_cache, loss_mc_cache, loss_data_cache, loss_cache, step_cache, resampled_times, blocks_cache
         else:

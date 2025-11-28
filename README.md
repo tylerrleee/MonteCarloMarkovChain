@@ -50,11 +50,14 @@ python3 -m venv venv
 
 3. Activate it
 
-source venv/bin/activate
+source venv/bin/activate # MacOS or Linux
+ .\venv\Scripts\activate # Windows 
 
 5. Installing dependencies
 
-pip install --upgrade pip && pip install -r requirements.txt
+pip install --upgrade pip && pip install -r requirements.txt # MacOS or Linux
+
+pip install --upgrade pip; pip install -r requirements.txt # Windows
 
 ## Library structure
 
