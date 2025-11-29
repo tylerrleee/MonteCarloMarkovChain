@@ -33,3 +33,5 @@ MCMC_chains/*.npy
 PRACTICE_MCMC.ipynb
 
 gstatsmcmc/MCMC_test.py
+MCMC_chains/testing.ipynb
+*.DS_Store
