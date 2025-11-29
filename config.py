@@ -8,4 +8,4 @@ sigma3 = 2.15
 
 resolution = 500
 
-current_index = 268 # ~30 million iterations
+current_index = 274 # ~30 million iterations
