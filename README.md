@@ -42,14 +42,17 @@ This allows for the realization of subglacial topography that maintains realisti
 
 ## Visualizations
 
-#### MCMC Realization after 2.2m iterations
-<img src="./visualizations/mcmc_realization_viz.png" alt="MCMC Realization plot" width="850">
+#### Comparing Realizations
+<img src="./visualizations/bed_realizations.svg" alt="Realization plot" width="850">
 
 ---
 
 #### Difference between Initial vs Last iteration at High Velocity region
-<img src="./visualizations/difference_plot_with_tracks (1).png" alt="Difference plot" width="550">
+<img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550">
 
+#### Mass Conservation Loss over 35 million Iterations
+
+<img src="./visualizations/4_loss_metric.png" alt="Difference plot" width="550">
 
 ## Reproducibility
 
