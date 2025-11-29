@@ -14,6 +14,16 @@ Current baselines, such as BedMap and BedMachine, often rely on block kriging an
 
 The Bindschadler and MacAyeal Ice Streams present unique challenges. They are characterized by "sticky spots" that control velocity changes and margin shifts, resulting in regions of both slow and fast-moving ice (Hulbe, 2016). Combining thickness data from BedMachine with high-resolution surface velocity data from InSAR in these regions often generates major artifacts, limiting the physical constraints available for standard kriging techniques.
 
+## Key Features
+
+- Bayesian Inference: Applies MCMC sampling to estimate hidden spatial fields based on observed data and prior geological knowledge.
+
+- Spatial Modeling: Uses variogram-based modeling to capture the statistical structure of the terrain. In this study, we are using the **Matern Covariance Function**
+
+- Scalability: Provides modular, flexible Python scripts and Jupyter notebooks adaptable for **different datasets, scales, and regions**.
+
+- Validation: Includes tools to compare mass residual loss against BedMachine baselines.
+
 ## Methodology
 
 To address these limitations, this framework utilizes the MCMC technique (Shao, 2025). We implement a dual-chain approach (Large Scale and Small Scale Chains) to produce Sequential Gaussian Simulations (Mackie, 2022).
@@ -30,32 +40,27 @@ This allows for the realization of subglacial topography that maintains realisti
 - Spatial Resolution of grid
 - Mass conservation uncertainty (similar to BedMachine; Morlighem, 2022)
 
-## Key Features
-
-- Bayesian Inference: Applies MCMC sampling to estimate hidden spatial fields based on observed data and prior geological knowledge.
-
-- Spatial Modeling: Uses variogram-based modeling to capture the statistical structure of the terrain. In this study, we are using the **Matern Covariance Function**
-
-- Scalability: Provides modular, flexible Python scripts and Jupyter notebooks adaptable for **different datasets, scales, and regions**.
-
-- Validation: Includes tools to compare mass residual loss against BedMachine baselines.
-
 ## Visualizations
 
-#### Comparing Realizations
+#### Topography Realization
 <img src="./visualizations/bed_realizations.svg" alt="Realization plot" width="850">
 
----
+*Figure 1: MCMC Bed Elevation Topography Realization 
+(A) Reference bed topography from BedMap3.
+(B) The initial condition for the MCMC chain, generated via Sequential Gaussian Simulation (SGS) with a Matérn covariance model.
+(C) The final realization of the large-scale MCMC chain after $3.5 \times 10^7$ iterations; this state minimizes mass conservation loss to levels consistent with BedMachine standards (see loss convergence plot).
 
 #### Difference between Initial vs Last iteration at High Velocity region
-<img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550" height="350">
+<img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550">
+
+*Figure 2: Main changes concentrates in certain areas in high velocity region
+(D) Radar flight tracks from the DEMOGORGON dataset overlaying the study area; the high-velocity region is delineated by the yellow contour (E) The residual difference in bed elevation (m) between the initial SGS realization (B) and the final MCMC output (C), highlighting the topographical adjustments made by the algorithm.*
 
 #### Mass Conservation Loss over 35 million Iterations
-
 <img src="./visualizations/4_loss_metric.png" alt="Difference plot" width="550">
 
+*Evolution of the objective function (Loss) over 35 million iterations for the LargeScaleChain (blue line). The optimization reduces the loss from the initial SGS state down to the baseline loss threshold of BedMachine (red dashed line), demonstrating the algorithm's convergence toward a physically consistent bed topography.*
 ## Reproducibility
-
 ### If you are working with a Conda/MiniForge Environment
 
 ```
