@@ -8,7 +8,6 @@ __pycache__/
 *.csv
 *.nc
 *.npy
-*.txt
 # All data folders (case-sensitive)
 data/
 Data/
