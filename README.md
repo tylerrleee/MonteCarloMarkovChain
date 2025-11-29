@@ -48,7 +48,7 @@ This allows for the realization of subglacial topography that maintains realisti
 ---
 
 #### Difference between Initial vs Last iteration at High Velocity region
-<img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550">
+<img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550" height="350">
 
 #### Mass Conservation Loss over 35 million Iterations
 
