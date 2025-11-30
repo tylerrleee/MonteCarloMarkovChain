@@ -60,7 +60,13 @@ This allows for the realization of subglacial topography that maintains realisti
 <img src="./visualizations/4_loss_metric.png" alt="Difference plot" width="550">
 
 *Evolution of the objective function (Loss) over 35 million iterations for the LargeScaleChain (blue line). The optimization reduces the loss from the initial SGS state down to the baseline loss threshold of BedMachine (red dashed line), demonstrating the algorithm's convergence toward a physically consistent bed topography.*
+
+> Note: Divot at 0.3e7-th iteration happens after adding 2D Gaussian random field using FFT-based spectral synthesis (MCMC.py).
+
+> For the future, with no restraint on resources and time, this study should be repeated with the same MCMC method throughout all iterations for consistency, and with multiple attempts for topography precision.
+
 ## Reproducibility
+
 ### If you are working with a Conda/MiniForge Environment
 
 ```
