@@ -155,6 +155,8 @@ Python 3.10.9
 # References
 
 - Shao, N., MacKie, E., Field, M., & McCormack, F. (2025). A Markov chain Monte Carlo approach for geostatistically simulating mass-conserving subglacial topography. Journal of Glaciology. https://doi.org/10.31223/x5sb2r
+- 
+- Seroussi H, Morlighem M, Rignot E, Larour E, Aubry D, Ben Dhia H and Kristensen SS (2011) Ice flux divergence anomalies on 79north Glacier, Greenland. Geophysical Research Letters, 38(9), 2011GL047338 (https://doi.org/10.1029/2011GL047338)
 
 - MacKie, E., Field, M., Wang, L., Schoedl, N., & Hibbs, M. (2022). GStatSim: Sequential Gaussian Simulation. Link
 
