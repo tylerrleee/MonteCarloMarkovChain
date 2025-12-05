@@ -4,6 +4,10 @@ This repository contains an implementation of the Markov Chain Monte Carlo (MCMC
 
 The project provides a Python framework designed to reproduce and extend the methodology described in Shao et al. (2025).
 
+# Poster
+
+<img src="./visualizations/tyler-le-poster.jpg" alt="Postert" width="850">
+
 # Overview 
 
 ## Scientific Motivation
