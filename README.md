@@ -6,7 +6,7 @@ The project provides a Python framework designed to reproduce and extend the met
 
 # Poster
 
-<img src="./visualizations/tyler-le-poster.jpg" alt="Postert" width="850">
+<img src="./visualizations/tyler-le-poster.svg" alt="Postert" width="850">
 
 # Overview 
 
