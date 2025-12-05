@@ -42,24 +42,43 @@ This allows for the realization of subglacial topography that maintains realisti
 
 ## Visualizations
 
+#### Model Inputs Visualizations
+
+<img src="./visualizations/multi_plot_figure" alt="model input plot" width="850">
+
+
+*Figure 2: Geophysical Input and Conditioning Data for the Ice Stream Study Area. This figure displays key data fields used as input or for conditioning the subsurface model.
+(Top Left) Ice Surface Elevation: Shows the topography of the ice surface, with a clear downhill gradient from the upper left (higher elevation) to the lower right.
+(Top Middle) Ice Velocity (X-comp): Highlights the along-flow component of ice velocity, fast-flowing ice stream (darker purple/black areas correspond to low velocity, while the bright features show velocity up to 600 m/year).
+(Top Right) Ice Velocity (Y-comp): Shows the across-flow component of ice velocity, revealing strong lateral shear and flow concentration, with both positive and negative velocity values (blue/yellow).
+(Bottom Left) Rate of Surface Height Change (dh/dt): Indicates areas of thinning (red) and thickening (blue) of the ice. The main changes (both thinning and thickening) are concentrated in and around the high-velocity ice stream area.
+(Bottom Middle) Surface Mass Balance: Shows the mass flux at the surface, which is relatively uniform across the domain compared to the dynamic fields.
+(Bottom Right) Conditioning Bed Measurements: Shows the scattered, point-based observations of bed elevation that are used to condition or constrain the subsurface model.*
+
 #### Topography Realization
 <img src="./visualizations/bed_realizations.svg" alt="Realization plot" width="850">
 
-*Figure 1: MCMC Bed Elevation Topography Realization 
+*Figure 2: MCMC Bed Elevation Topography Realization 
 (A) Reference bed topography from BedMap3.
-(B) The initial condition for the MCMC chain, generated via Sequential Gaussian Simulation (SGS) with a Matérn covariance model.
-(C) The final realization of the large-scale MCMC chain after $3.5 \times 10^7$ iterations; this state minimizes mass conservation loss to levels consistent with BedMachine standards (see loss convergence plot).
+(B) Reference bed topography from BedMachine by calculating sufurace - bed thickness from BedMachine, included high velocity region contour
+(C) The final realization of the large-scale MCMC chain after $3.5 \times 10^7$ iterations; this state minimizes mass conservation loss to levels consistent with BedMachine standards (see loss convergence plot), and included high velocity region contour.
 
 #### Difference between Initial vs Last iteration at High Velocity region
 <img src="./visualizations/differencein_beds.svg" alt="Difference plot" width="550">
 
-*Figure 2: Main changes concentrates in certain areas in high velocity region
+*Figure 3: Main changes concentrates in certain areas in high velocity region
 (D) Radar flight tracks from the DEMOGORGON dataset overlaying the study area; the high-velocity region is delineated by the yellow contour (E) The residual difference in bed elevation (m) between the initial SGS realization (B) and the final MCMC output (C), highlighting the topographical adjustments made by the algorithm.*
 
 #### Mass Conservation Loss over 35 million Iterations
-<img src="./visualizations/4_loss_metric.png" alt="Difference plot" width="550">
+<img src="./visualizations/4_loss_metric_multi" alt="Difference plot" width="550">
 
-*Evolution of the objective function (Loss) over 35 million iterations for the LargeScaleChain (blue line). The optimization reduces the loss from the initial SGS state down to the baseline loss threshold of BedMachine (red dashed line), demonstrating the algorithm's convergence toward a physically consistent bed topography.*
+*Evolution of the objective function (Loss) over 35 million iterations for the LargeScaleChain (blue line), and 2 Small Scale Chains for 2 million iterations each. The optimization reduces the loss from the initial SGS state down to the baseline loss threshold of BedMachine (red dashed line), demonstrating the algorithm's convergence toward a physically consistent bed topography.*
+
+#### Cross Section of Bindshadler and MacAyeal Ice Streams
+<img src="./visualizations/cross_section.svg" alt="Cross Section plot" width="850">
+
+*Cross Section visualization of the ice streams, comparison between BedMachine, and the last 15 million iterations of Large Scale chain, where Mass Conservation Loss is minimized (Figure 4)*
+
 
 > Note: Divot at 0.3e7-th iteration happens after adding 2D Gaussian random field using FFT-based spectral synthesis (MCMC.py).
 
