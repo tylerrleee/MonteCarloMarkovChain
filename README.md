@@ -70,9 +70,13 @@ This allows for the realization of subglacial topography that maintains realisti
 (D) Radar flight tracks from the DEMOGORGON dataset overlaying the study area; the high-velocity region is delineated by the yellow contour (E) The residual difference in bed elevation (m) between the initial SGS realization (B) and the final MCMC output (C), highlighting the topographical adjustments made by the algorithm.*
 
 #### Mass Conservation Loss over 35 million Iterations
-<img src="./visualizations/4_loss_metric_multi" alt="Difference plot" width="550">
+<img src="./visualizations/4_loss_metric_multi.png" alt="Difference plot" width="550">
 
 *Evolution of the objective function (Loss) over 35 million iterations for the LargeScaleChain (blue line), and 2 Small Scale Chains for 2 million iterations each. The optimization reduces the loss from the initial SGS state down to the baseline loss threshold of BedMachine (red dashed line), demonstrating the algorithm's convergence toward a physically consistent bed topography.*
+
+> Note: Divot at 0.3e7-th iteration happens after adding 2D Gaussian random field using FFT-based spectral synthesis (MCMC.py).
+
+> For the future, with no restraint on resources and time, this study should be repeated with the same MCMC method throughout all iterations for consistency, and with multiple attempts for topography precision.
 
 #### Cross Section of Bindshadler and MacAyeal Ice Streams
 <img src="./visualizations/cross_section.svg" alt="Cross Section plot" width="850">
