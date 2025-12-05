@@ -44,8 +44,7 @@ This allows for the realization of subglacial topography that maintains realisti
 
 #### Model Inputs Visualizations
 
-<img src="./visualizations/multi_plot_figure" alt="model input plot" width="850">
-
+<img src="./visualizations/multi_plot_figure.png" alt="model input plot" width="850">
 
 *Figure 2: Geophysical Input and Conditioning Data for the Ice Stream Study Area. This figure displays key data fields used as input or for conditioning the subsurface model.
 (Top Left) Ice Surface Elevation: Shows the topography of the ice surface, with a clear downhill gradient from the upper left (higher elevation) to the lower right.
