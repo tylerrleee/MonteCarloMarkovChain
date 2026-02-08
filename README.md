@@ -20,13 +20,13 @@ The Bindschadler and MacAyeal Ice Streams present unique challenges. They are ch
 
 ## Key Features
 
-- Bayesian Inference: Applies MCMC sampling to estimate hidden spatial fields based on observed data and prior geological knowledge.
+- Applies MCMC sampling to estimate hidden spatial fields based on observed data and prior geological knowledge.
 
-- Spatial Modeling: Uses variogram-based modeling to capture the statistical structure of the terrain. In this study, we are using the **Matern Covariance Function**
+- Uses variogram-based modeling to capture the statistical structure of the terrain. In this study, we are using the **Matern Covariance Function**
 
-- Scalability: Provides modular, flexible Python scripts and Jupyter notebooks adaptable for **different datasets, scales, and regions**.
+- Provides modular, flexible Python scripts and Jupyter notebooks adaptable for **different datasets, scales, and regions**.
 
-- Validation: Includes tools to compare mass residual loss against BedMachine baselines.
+- Includes tools to compare mass residual loss against BedMachine baselines.
 
 ## Methodology
 
