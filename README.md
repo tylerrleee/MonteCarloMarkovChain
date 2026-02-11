@@ -4,7 +4,7 @@ This repository contains an implementation of the Markov Chain Monte Carlo (MCMC
 
 The project provides a Python framework designed to reproduce and extend the methodology described in Shao et al. (2025).
 
-# CONTINUATION
+# CONTINUATION 02/2026
 
 <a href="https://github.com/tylerrleee/bindshadler-macayeal-mcmc"> Continued work using multi-processing MCMC on Bindshadler & MacAyeal can be found here </a>
 # Poster
